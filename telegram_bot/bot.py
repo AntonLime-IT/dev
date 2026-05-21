@@ -1,6 +1,7 @@
 """
 Точка входа: запуск Telegram-бота с интеграцией Claude.
 """
+import asyncio
 import logging
 from telegram.ext import (
     Application,
@@ -49,6 +50,9 @@ def build_app() -> Application:
 
 def main():
     logger.info("Запуск бота…")
+    # Python 3.10+ больше не создаёт event loop автоматически — делаем сами
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     app = build_app()
     app.run_polling(drop_pending_updates=True)
 

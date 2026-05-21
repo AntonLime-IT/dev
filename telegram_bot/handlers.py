@@ -329,18 +329,36 @@ async def handle_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         logger.info("Сохранён пост из канала #%d (%d символов)", msg.message_id, len(msg.text))
 
 
+def _is_forwarded(msg) -> bool:
+    """Проверяет все возможные признаки пересланного сообщения."""
+    return bool(
+        getattr(msg, "forward_origin", None)       # новый API (PTB v20+)
+        or getattr(msg, "forward_from_chat", None)  # старый API: из канала/группы
+        or getattr(msg, "forward_from", None)       # старый API: от пользователя
+        or getattr(msg, "forward_sender_name", None)# скрытый отправитель
+        or getattr(msg, "forward_date", None)       # дата оригинала (устаревший, но рабочий)
+    )
+
+
 async def handle_forwarded(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Сохраняет любое пересланное сообщение (из канала или нет)."""
+    """Сохраняет любое пересланное сообщение."""
     msg = update.message
-    if not msg or not msg.text:
-        await msg.reply_text("⚠️ Пересланное сообщение не содержит текста.")
+    if not msg:
         return
 
-    # Пытаемся взять оригинальный message_id, иначе берём текущий
+    if not msg.text:
+        await msg.reply_text(
+            "⚠️ Пересланное сообщение не содержит текста.\n"
+            "Для анализа поста с фото используйте `/save` и вставьте текст вручную."
+        )
+        return
+
+    # Пробуем достать оригинальный message_id из forward_origin
     fwd = getattr(msg, "forward_origin", None)
     src_id = getattr(fwd, "message_id", None) or msg.message_id
 
     channel_posts[src_id] = msg.text
+    logger.info("Сохранён пересланный пост: src_id=%d, len=%d", src_id, len(msg.text))
 
     await msg.reply_text(
         f"✅ Пост сохранён с ID `{src_id}`\n\n"
@@ -355,23 +373,30 @@ async def handle_forwarded(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает текстовые сообщения: пересланные или свободный ввод."""
     msg = update.message
-    if not msg:
+    if not msg or not msg.text:
         return
 
-    # Пересланные сообщения
-    if msg.forward_origin or msg.forward_from_chat:
+    user = msg.from_user
+    if not user:
+        return
+
+    # Пересланные сообщения — сохраняем (проверяем все возможные атрибуты)
+    if _is_forwarded(msg):
         await handle_forwarded(update, ctx)
         return
 
-    # Прочие сообщения от админов — отвечает Claude
-    if is_admin(msg.from_user.id):
-        await update.message.reply_text("🤔 Думаю…")
-        try:
-            answer = cc.answer_question(msg.text)
-        except Exception as e:
-            await update.message.reply_text(f"❌ Ошибка Claude: {e}")
-            return
-        await _send_long(update, answer)
+    # Обычные сообщения — только для админов
+    if not is_admin(user.id):
+        return
+
+    # Свободный текст от админа → спрашиваем Claude
+    await update.message.reply_text("🤔 Думаю…")
+    try:
+        answer = cc.answer_question(msg.text)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка Claude: {e}")
+        return
+    await _send_long(update, answer)
 
 
 # ────────────────────────── Callback кнопки ──────────────────────────────

@@ -27,6 +27,7 @@ def build_app() -> Application:
     # ── Команды ──────────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start", h.cmd_start))
     app.add_handler(CommandHandler("help",  h.cmd_help))
+    app.add_handler(CommandHandler("save",    h.cmd_save))
     app.add_handler(CommandHandler("post",    h.cmd_post))
     app.add_handler(CommandHandler("analyze", h.cmd_analyze))
     app.add_handler(CommandHandler("improve", h.cmd_improve))

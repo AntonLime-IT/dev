@@ -54,7 +54,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "👋 Привет! Я бот-ассистент для вашего Telegram-канала с поддержкой Claude AI.\n\n"
         "📋 *Доступные команды:*\n\n"
         "🔹 /post `<тема>` — создать пост на тему\n"
-        "🔹 /analyze `<ID сообщения>` — анализ поста по ID\n"
+        "🔹 /save `<текст>` — сохранить текст поста для анализа\n"
+        "🔹 /analyze `<ID>` — анализ поста по ID\n"
         "🔹 /improve `<ID> | <инструкции>` — улучшить пост\n"
         "🔹 /reply `<ID> | <комментарий>` — сгенерировать ответ на комментарий\n"
         "🔹 /publish `<текст>` — опубликовать пост в канале\n"
@@ -62,13 +63,40 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🔹 /ask `<вопрос>` — задать вопрос Claude\n"
         "🔹 /posts — список сохранённых постов\n"
         "🔹 /help — эта справка\n\n"
-        "💡 *Совет:* Перешлите мне любое сообщение из канала — я сохраню его для анализа."
+        "💡 *Как добавить пост для анализа:*\n"
+        "  • Переслать сообщение из канала сюда\n"
+        "  • Или: `/save текст поста`"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await cmd_start(update, ctx)
+
+
+@admin_only
+async def cmd_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Сохраняет текст поста вручную: /save <текст>"""
+    text = " ".join(ctx.args)
+    if not text:
+        await update.message.reply_text(
+            "❌ Укажите текст поста после команды.\n\n"
+            "Пример:\n`/save Это текст поста из канала, который хочу проанализировать`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    # Используем message_id текущего сообщения как ключ
+    post_id = update.message.message_id
+    channel_posts[post_id] = text
+    await update.message.reply_text(
+        f"✅ Текст сохранён с ID `{post_id}`\n\n"
+        f"Используйте:\n"
+        f"• `/analyze {post_id}` — анализ\n"
+        f"• `/improve {post_id}` — улучшить\n"
+        f"• `/improve {post_id} | сделай живее` — улучшить с инструкцией",
+        parse_mode=ParseMode.MARKDOWN,
+    )
 
 
 @admin_only
@@ -302,32 +330,24 @@ async def handle_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_forwarded(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Сохраняет переслаmное из канала сообщение."""
+    """Сохраняет любое пересланное сообщение (из канала или нет)."""
     msg = update.message
     if not msg or not msg.text:
+        await msg.reply_text("⚠️ Пересланное сообщение не содержит текста.")
         return
 
-    # Проверяем, что это пересланное из нашего канала
-    fwd = msg.forward_origin
-    if fwd and hasattr(fwd, "chat"):
-        ch_id = str(fwd.chat.id)
-        ch_username = getattr(fwd.chat, "username", "")
-        target = str(TELEGRAM_CHANNEL_ID).lstrip("@")
-        if ch_id == str(TELEGRAM_CHANNEL_ID) or ch_username == target:
-            src_id = getattr(fwd, "message_id", msg.message_id)
-            channel_posts[src_id] = msg.text
-            await msg.reply_text(
-                f"✅ Пост сохранён с ID `{src_id}`.\n"
-                f"Используйте `/analyze {src_id}` для анализа.",
-                parse_mode=ParseMode.MARKDOWN,
-            )
-            return
+    # Пытаемся взять оригинальный message_id, иначе берём текущий
+    fwd = getattr(msg, "forward_origin", None)
+    src_id = getattr(fwd, "message_id", None) or msg.message_id
 
-    # Любое пересланное сообщение — тоже сохраняем
-    channel_posts[msg.message_id] = msg.text
+    channel_posts[src_id] = msg.text
+
     await msg.reply_text(
-        f"✅ Текст сохранён с ID `{msg.message_id}`.\n"
-        f"Используйте `/analyze {msg.message_id}` для анализа.",
+        f"✅ Пост сохранён с ID `{src_id}`\n\n"
+        f"Используйте:\n"
+        f"• `/analyze {src_id}` — анализ\n"
+        f"• `/improve {src_id}` — улучшить\n"
+        f"• `/improve {src_id} | сделай живее` — улучшить с инструкцией",
         parse_mode=ParseMode.MARKDOWN,
     )
 

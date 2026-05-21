@@ -2,6 +2,9 @@
 .env
 *.env
 
+# Данные бота (личные посты канала)
+telegram_bot/posts.json
+
 # Python
 __pycache__/
 *.py[cod]

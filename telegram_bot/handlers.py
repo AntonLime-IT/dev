@@ -3,7 +3,9 @@
 """
 from __future__ import annotations
 
+import json
 import logging
+import pathlib
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -13,8 +15,36 @@ from config import TELEGRAM_CHANNEL_ID, ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
-# Хранилище последних постов канала (message_id → text) — in-memory
-channel_posts: dict[int, str] = {}
+# ────────────────────────── Персистентное хранилище ──────────────────────
+
+POSTS_FILE = pathlib.Path(__file__).parent / "posts.json"
+
+
+def _load_posts() -> dict[int, str]:
+    """Загружает посты из файла при старте."""
+    if POSTS_FILE.exists():
+        try:
+            raw = json.loads(POSTS_FILE.read_text(encoding="utf-8"))
+            return {int(k): v for k, v in raw.items()}
+        except Exception as e:
+            logger.warning("Не удалось загрузить posts.json: %s", e)
+    return {}
+
+
+def _save_posts() -> None:
+    """Сохраняет посты на диск."""
+    try:
+        POSTS_FILE.write_text(
+            json.dumps(channel_posts, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        logger.error("Не удалось сохранить posts.json: %s", e)
+
+
+# Загружаем при импорте модуля
+channel_posts: dict[int, str] = _load_posts()
+logger.info("Загружено постов из файла: %d", len(channel_posts))
 
 
 # ────────────────────────── Вспомогательные ──────────────────────────────
@@ -89,6 +119,7 @@ async def cmd_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Используем message_id текущего сообщения как ключ
     post_id = update.message.message_id
     channel_posts[post_id] = text
+    _save_posts()
     await update.message.reply_text(
         f"✅ Текст сохранён с ID `{post_id}`\n\n"
         f"Используйте:\n"
@@ -326,6 +357,7 @@ async def handle_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     msg = update.channel_post
     if msg and msg.text:
         channel_posts[msg.message_id] = msg.text
+        _save_posts()
         logger.info("Сохранён пост из канала #%d (%d символов)", msg.message_id, len(msg.text))
 
 
@@ -358,6 +390,7 @@ async def handle_forwarded(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     src_id = getattr(fwd, "message_id", None) or msg.message_id
 
     channel_posts[src_id] = msg.text
+    _save_posts()
     logger.info("Сохранён пересланный пост: src_id=%d, len=%d", src_id, len(msg.text))
 
     await msg.reply_text(

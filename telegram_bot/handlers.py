@@ -362,14 +362,8 @@ async def handle_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 def _is_forwarded(msg) -> bool:
-    """Проверяет все возможные признаки пересланного сообщения."""
-    return bool(
-        getattr(msg, "forward_origin", None)       # новый API (PTB v20+)
-        or getattr(msg, "forward_from_chat", None)  # старый API: из канала/группы
-        or getattr(msg, "forward_from", None)       # старый API: от пользователя
-        or getattr(msg, "forward_sender_name", None)# скрытый отправитель
-        or getattr(msg, "forward_date", None)       # дата оригинала (устаревший, но рабочий)
-    )
+    """Проверяет признак пересланного сообщения (PTB v21+)."""
+    return msg.forward_origin is not None
 
 
 async def handle_forwarded(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
